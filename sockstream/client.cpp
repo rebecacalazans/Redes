@@ -9,6 +9,11 @@
 
 int main(int argc, char **argv) {
 
+  if (argc < 2) {
+    perror("Não foi encontrado IP de destino");
+    return 1;
+  }
+
   int sockfd;
   struct sockaddr_in addr;
 
@@ -21,7 +26,7 @@ int main(int argc, char **argv) {
 
   addr.sin_family = AF_INET;
   addr.sin_port   = htons(1234);
-  addr.sin_addr.s_addr = inet_addr("172.16.40.194");
+  addr.sin_addr.s_addr = inet_addr(argv[1]);
 
   memset(&addr.sin_zero,0,sizeof(addr.sin_zero));
 
