@@ -7,15 +7,56 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <thread>
 #define MAX 1024
 
-struct message {
-  unsigned char type;
-  bool last;
-  unsigned int len;
-};
+char name[20];
+
+void send_thread(int sockfd) {
+  strcat(name, ": ");
+  char* str = (char*) malloc(MAX);
+  strcpy(str, name);
+  char* packet = str + strlen(name);
+
+  if (!packet) {
+    perror("Falha na alocação da memória");
+    exit (1);
+  }
+
+  while(1) {
+    memset(packet, 0, MAX - strlen(name));
+    fgets(packet, MAX - strlen(name), stdin);
+      int mlen = send(sockfd, str, MAX - strlen(name), 0);
+    if (mlen == -1 || mlen == 0) {
+      printf("Erro ao enviar mensagem");
+      exit (1);
+    }
+  }
+}
+
+void rcv_thread(int sockfd) {
+  char* packet = (char*) malloc(MAX);
+  if (!packet) {
+    perror("Falha na alocação da memória");
+    exit (1);
+  }
+
+  while(1) {
+    memset(packet, 0, MAX);
+    int mlen = recv(sockfd, packet, MAX,0);
+    if(mlen == -1) {
+      perror("Erro ao receber mensagem\n");
+      exit (1);
+    }
+    packet[mlen] = '\0';
+    printf("%s\n", packet);
+  }
+}
 
 int main(int argc, char **argv) {
+
+  std::thread tsend;
+  std::thread trcv;
   int sockfd;
   int sock_client;
   struct sockaddr_in addr;
@@ -59,48 +100,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  printf("Pedido de conexao feito!\n");
+  printf("Digite seu nome: ");
+  fgets(name, 18, stdin);
+  name[strlen(name) - 1] = '\0';
 
-  unsigned int packet_size = sizeof(struct message) + MAX;
-  char* packet = (char*) malloc(packet_size);
-  if (!packet) {
-    perror("Falha na alocação da memória");
-    return 1;
-  }
+  tsend = std::thread(&send_thread, sock_client);
+  trcv = std::thread(&rcv_thread, sock_client);
 
-  struct message* msg =(struct message*) packet;
-  char* data =(char*) (packet + sizeof(struct message));
-
-  while(1) {
-    memset(packet, 0, packet_size);
-    int mlen;
-
-    mlen = recv(sock_client, packet, MAX + sizeof(struct message),0);
-    if(mlen == -1) {
-      perror("Erro ao receber mensagem\n");
-    }
-    packet[mlen] = '\0';
-
-    if(msg->len != mlen) {
-      if(send(sock_client, "Mensagem incompleta", 19, 0) == -1);
-      printf("Erro ao receber mensagem");
-    }
-    printf("Mensagem: %s\n", data);
-
-    memset(packet, 0, packet_size);
-    fflush(stdin);
-    fgets(data, MAX, stdin);
-
-    msg->type = 1;
-    msg->last = true;
-    msg->len = sizeof(msg) + strlen(data);
-
-    if (send(sock_client, packet, sizeof(struct message) + strlen(data), 0)== -1) {
-      printf("Erro ao enviar mensagem");
-      return 1;
-    };
-
-  }
+  tsend.join();
+  trcv.join();
 
   close(sock_client);
   close(sockfd);

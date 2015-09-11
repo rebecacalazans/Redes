@@ -7,15 +7,55 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <thread>
 #define MAX 1024
 
-struct message {
-  unsigned char type;
-  bool last;
-  unsigned int len;
-};
+char name[20];
+
+void send_thread(int sockfd) {
+  strcat(name, ": ");
+  char* str = (char*) malloc(MAX);
+  strcpy(str, name);
+  char* packet = str + strlen(name);
+
+  if (!packet) {
+    perror("Falha na alocação da memória");
+    exit (1);
+  }
+
+  while(1) {
+    memset(packet, 0, MAX - strlen(name));
+    fgets(packet, MAX - strlen(name), stdin);
+    int mlen = send(sockfd, str, MAX - strlen(name), 0);
+    if (mlen == -1 || mlen == 0) {
+      printf("Erro ao enviar mensagem");
+      exit (1);
+    }
+  }
+}
+
+void rcv_thread(int sockfd) {
+  char* packet = (char*) malloc(MAX);
+  if (!packet) {
+    perror("Falha na alocação da memória");
+      exit (1);
+  }
+
+  while(1) {
+    memset(packet, 0, MAX);
+    int mlen = recv(sockfd, packet, MAX,0);
+    if(mlen == -1) {
+      perror("Erro ao receber mensagem\n");
+      exit (1);
+    }
+    packet[mlen] = '\0';
+    printf("%s\n", packet);
+  }
+}
 
 int main(int argc, char **argv) {
+
+  std::thread tsend, trcv;
   int sockfd;
   struct sockaddr_in addr;
   unsigned short port;
@@ -41,7 +81,6 @@ int main(int argc, char **argv) {
   addr.sin_family = AF_INET;
   addr.sin_port   = htons(port);
   addr.sin_addr.s_addr = inet_addr(argv[1]);
-
   memset(&addr.sin_zero,0,sizeof(addr.sin_zero));
 
   if(connect(sockfd,(struct sockaddr*)&addr,sizeof(addr)) != 0)
@@ -50,49 +89,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  printf("Conectado!\n");
+  printf("Digite seu nome: ");
+  fgets(name, 18, stdin);
+  name[strlen(name) - 1] = '\0';
 
-  unsigned int packet_size = sizeof(struct message) + MAX;
-  char* packet = (char*) malloc(packet_size);
+  tsend = std::thread(&send_thread, sockfd);
+  trcv = std::thread(&rcv_thread, sockfd);
 
-  if (!packet) {
-    perror("Falha na alocação da memória");
-    return 1;
-  }
-
-  struct message* msg =(struct message*) packet;
-  char* data =(char*) (packet + sizeof(struct message));
-  while(1) {
-
-    memset(packet, 0, packet_size);
-    fgets(data, MAX, stdin);
-
-    msg->type = 1;
-    msg->last = true;
-    msg->len = sizeof(msg) + strlen(data);
-
-    if (send(sockfd, packet, sizeof(struct message) + strlen(data), 0)== -1) {
-      printf("Erro ao enviar mensagem");
-      return 1;
-    };
-
-    memset(packet,0,sizeof(packet));
-    int mlen;
-
-    mlen = recv(sockfd, packet, MAX + sizeof(struct message),0);
-    if(mlen == -1) {
-      perror("Erro ao receber mensagem");
-      return 1;
-    }
-
-  packet[mlen] = '\0';
-
-  if(msg->len != mlen) {
-    printf("Erro ao receber mensagem\n");
-  }
-  printf("Mensagem: %s\n", data);
-
-  }
+  tsend.join();
+  trcv.join();
 
   close(sockfd);
   return 0;
